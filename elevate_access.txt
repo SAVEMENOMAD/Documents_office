@@ -1,0 +1,73 @@
+def elevate_access(access_token, principal_ids):
+    try:
+        principal_id=principal_ids[0]
+        scope = '/'
+        # User Access Administrator Role ID
+        role_definition_id = '18d7d88d-d35e-4fb5-a5c3-7773c20a72d9'
+       
+        # First, check if the role is already assigned to the principal
+        if check_existing_role_assignment(scope, principal_id, role_definition_id, access_token):
+            logging.info(f"Principal '{principal_id}' already has elevated access.")
+            return True
+       
+        # Generate a unique role assignment ID
+        role_assignment_id = str(uuid.uuid4())  
+       
+        # Assign elevated access with principalType
+        url = f"https://management.azure.com{scope}/providers/Microsoft.Authorization/roleAssignments/{role_assignment_id}?api-version=2022-04-01"
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json'
+        }
+        body = {
+            'properties': {
+                'roleDefinitionId': f"{scope}providers/Microsoft.Authorization/roleDefinitions/{role_definition_id}",
+                'principalId': principal_id,
+                'principalType': 'ServicePrincipal'  # Specify the principal type
+            }
+        }
+        response = requests.put(url, headers=headers, json=body)
+       
+        if response.status_code in [200, 201]:
+            logging.info(f"Successfully elevated access for principal '{principal_id}'.")
+            return True
+        else:
+            logging.error(f"Failed to elevate access for principal '{principal_id}'. Error: {response.text}")
+            return False
+ 
+    except requests.RequestException as e:
+        logging.error(f"Error elevating access: {e}")
+        return False
+ 
+def check_existing_role_assignment(scope, principal_id, role_definition_id, access_token):
+    """
+    Check if the role is already assigned to the principal at the given scope.
+    """
+    try:
+        # API endpoint to check existing role assignments
+        url = f"https://management.azure.com{scope}/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01&$filter=principalId eq '{principal_id}'"
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json'
+        }
+       
+        # Make GET request to fetch role assignments
+        response = requests.get(url, headers=headers)
+       
+        if response.status_code == 200:
+            role_assignments = response.json().get('value', [])
+           
+            # Loop through role assignments and check for matching role and scope
+            for assignment in role_assignments:
+                assigned_role_definition_id = assignment['properties']['roleDefinitionId']
+                if assigned_role_definition_id.endswith(role_definition_id):
+                    logging.info(f"Principal '{principal_id}' already has the User Access Administrator role.")
+                    return True  # Role is already assigned
+           
+        else:
+            logging.error(f"Failed to check existing role assignments. Status code: {response.status_code}, Error: {response.text}")
+            return False
+   
+    except Exception as err:
+        logging.error(f"Error checking existing role assignments: {err}")
+        return False
